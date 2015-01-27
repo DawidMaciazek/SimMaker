@@ -20,13 +20,42 @@ HELP="simmaker - simulation scripts and resources manager for lammps
 How to use:
   * arguments within ? ? are optional, if not specified script will assume current directory
   1) Initialization project directory: 
+  Go to the directory where you want to create project, or give path to this directory as optional argument.
     simmaker -i/--init projectName ?placementDirectory?
-  2) Initialize family directory 
+      example: cd /tmp; simmaker -i myProject
+      or: simmaker -i myProject /tmp
+
+  2) Initialize family directory:
+  Go to the project directory, or give path to this directory as optional argument.
     simmaker -f/--family familyName ?projectDirectory?
-  3) Create subsimulations (from n to m) for family:
-    simmaker -c/--family n-m ?familyDirectory?
-  4) Submitting created subsimulation to queue
+      example: cd /tmp/myProject; simmaker -f myFamily
+      or: simmaker -f myFamily /tmp/myProject
+
+  3) Provide necessary scripts and datafiles.
+  scriptName       |         location           |    purpose
+  myFamily.dat     | myProject/myFamily/data    | primary data, used to create subsimulation
+  myFamily.in      | myProject/myFamily/scripts | primary input script for lammps
+  myFamily.qs      | myProject/myFamily/scripts | primary qsub script 
+  myFamily.args    | myProject/myFamily/scripts | list of arguments, passed to awk for each subsimulation number
+  myFamily_dat.awk | myProject/myFamily/scripts | awk script for creating datafile for N-th subsimulation
+  myFamily_in.awk  | myProject/myFamily/scripts | awk script for creating input script for N-th subsimulation
+  myFamily_qs.awk  | myProject/myFamily/scripts | awk script for creating qscript for N-th subsimulation
+
+    Create or copy requaier scripts listed above.
+    
+    !You can create empty templates with command: ! NOT IMPLEMENTED YET !
+      example: cd /tmp/myNewProject/myNewFamily; simmaker -t
+      or: simmaker -t
+
+  4) Create subsimulations (from n to m) for family:
+    simmaker -c/--create n-m ?familyDirectory?
+      example: cd /tmp/myProject/myFamily; simmaker -c 1-5
+      or: simmaker -c 1-5 /tmp/myProject/myFamily
+
+  5) Submitting created subsimulation to queue
     simmaker -qs/--qsub n-m ?familyDirectory?
+      example: cd /tmp/myProject/myFamily; simmaker -qs 1-5
+      or: simmaker -qs 1-5 /tmp/myProject/myFamily
 
      
 Flags:
@@ -34,6 +63,7 @@ Flags:
   -f  --family    family initialization for given project
   -c  --create    generation sub-simulations for given family
   -qs --qsub      submitting created 
+  -t  --template  create templates ! NOT IMPLEMENTED YET !
 "
 
 # Control dir name
@@ -344,7 +374,6 @@ function qsubScripts {
       warning "Subsimulation directory does not exist:\n   $sybSim\nTo create subsimulation use --create flag"  
     else
       ( cd $subSimDir; qsub $subSimQScript )
-      echo "powinno puscic qsuba u gory"
       updateLog $familyDir "Simulation started: $subSimName"
     fi
     ((currentNum++))
@@ -449,7 +478,6 @@ while [[ $i -lt $# ]] ; do
       warning "Family directory is not given, setting current directory"
       FAMILYDIR=`pwd`
     fi
-
     ((i++)); continue
   fi
 
@@ -480,6 +508,7 @@ while [[ $i -lt $# ]] ; do
       warning "Family directory is not given, setting current directory"
       FAMILYDIR=`pwd`
     fi
+    ((i++); continue
   fi
 
   # test create // currently unuse
