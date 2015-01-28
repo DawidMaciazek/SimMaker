@@ -16,10 +16,15 @@
 # -----------------------------------------------
 # Manual string 
 HELP="simmaker - simulation scripts and resources manager for lammps
+LAMMPS is a classical molecular dynamics code with a number of implemented potentials. 
+More information can be found at:
+http://lammps.sandia.gov/
 
 How to use:
-  * arguments within ? ? are optional, if not specified script will assume current directory
-  1) Initialization project directory: 
+  * arguments within ? ? are optional path argument, if not specified script will assume current directory.
+  Steps to create simulations:
+
+  1) Initialize project: 
   Go to the directory where you want to create project, or give path to this directory as optional argument.
     simmaker -i/--init projectName ?placementDirectory?
       example: cd /tmp; simmaker -i myProject
@@ -32,6 +37,9 @@ How to use:
       or: simmaker -f myFamily /tmp/myProject
 
   3) Provide necessary scripts and datafiles.
+  Name for given family are listed in file  nameTemplates.txt .
+  
+  Name convention and location for our example:
   scriptName       |         location           |    purpose
   myFamily.dat     | myProject/myFamily/data    | primary data, used to create subsimulation
   myFamily.in      | myProject/myFamily/scripts | primary input script for lammps
@@ -41,12 +49,8 @@ How to use:
   myFamily_in.awk  | myProject/myFamily/scripts | awk script for creating input script for N-th subsimulation
   myFamily_qs.awk  | myProject/myFamily/scripts | awk script for creating qscript for N-th subsimulation
 
-    Create or copy requaier scripts listed above.
+    Create or copy needed scripts listed above.
     
-    !You can create empty templates with command: ! NOT IMPLEMENTED YET !
-      example: cd /tmp/myNewProject/myNewFamily; simmaker -t
-      or: simmaker -t
-
   4) Create subsimulations (from n to m) for family:
     simmaker -c/--create n-m ?familyDirectory?
       example: cd /tmp/myProject/myFamily; simmaker -c 1-5
@@ -62,8 +66,7 @@ Flags:
   -i  --init      project initialization
   -f  --family    family initialization for given project
   -c  --create    generation sub-simulations for given family
-  -qs --qsub      submitting created 
-  -t  --template  create templates ! NOT IMPLEMENTED YET !
+  -qs --qsub      submitting created sub-simulations simulations
 "
 
 # Control dir name
@@ -508,7 +511,7 @@ while [[ $i -lt $# ]] ; do
       warning "Family directory is not given, setting current directory"
       FAMILYDIR=`pwd`
     fi
-    ((i++); continue
+    ((i++)); continue
   fi
 
   # test create // currently unuse
