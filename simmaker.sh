@@ -11,6 +11,8 @@
 #               :    4.2.45(1)-release
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 
+# DEV TO DO
+# -- copying scripts from another sim family/ project
 
 # --------------- GLOBAL VARIABLES --------------
 # -----------------------------------------------
@@ -67,6 +69,12 @@ Flags:
   -f  --family    family initialization for given project
   -c  --create    generation sub-simulations for given family
   -qs --qsub      submitting created sub-simulations simulations
+  
+  -rc --recreate
+  -rq --re-qscript
+
+  -p  --post-processing
+  -d  --delete
 "
 
 # Control dir name
@@ -92,6 +100,8 @@ DATA_MOD_AFFIX="_dat.awk"
 INPUT_MOD_AFFIX="_in.awk"
 QSCRIPT_MOD_AFFIX="_qs.awk"
 SIM_NUM_CONNECT="_"
+
+POSTPROCESS_MOD_AFFIX=".sh"
 
 # Awk const variable
 INPUT_AWK_V="input"
@@ -229,6 +239,8 @@ function setProjectLocalNames {
   QScriptFile="${scriptDir}/${familyName}${QSCRIPT_EXT}"
   argsFile="${scriptDir}/${familyName}${ARGSF_EXT}"
 
+  postProcessFile="${scriptDir}${POSTPROCESS_MOD_AFFIX}"
+
   dataModScriptFile="${scriptDir}/${familyName}${DATA_MOD_AFFIX}"
   inputModScriptFile="${scriptDir}/${familyName}${INPUT_MOD_AFFIX}"
   qScriptModScriptFile="${scriptDir}/${familyName}${QSCRIPT_MOD_AFFIX}"
@@ -294,12 +306,11 @@ function checkFamilyIntegrity {
   return 0 
 }
 
-
 function createInputScript {
 # //need: setProjectLocalNames, setSubSimLocalNames
   echo "creating in script: $subSimInputScript "
 
-  awk -f "$inputModScriptFile" -v "$SUBSIMDIR_AWK_V"="$subSimDir" -v "$INPUT_AWK_V"="$subSimInputScript" -v "$DATA_AWK_V"="$subSimDataFile" -v "$DUMP_AWK_V"="$subSimDumpFile" -v "$ARGS_AWK_V"="$subSimArgs" "$inputScriptFile" > "$subSimInputScript"  
+  awk -f "$inputModScriptFile" -v "$SUBSIMDIR_AWK_V"="$subSimDir" -v "$INPUT_AWK_V"="$subSimInputScript" -v "$DATA_AWK_V"="$subSimDataFile" -v "$DUMP_AWK_V"="$subSimDumpFile" -v "$ARGS_AWK_V"="$subSimArgs" "$inputScriptFile" > "$subSimInputScript" 
 }
 
 function createDataScript {
@@ -321,7 +332,6 @@ function setSubSimLocalNames {
   paddedNum=`printf "%04d" $currentNum`
   subSimName="${familyName}${SIM_NUM_CONNECT}${paddedNum}"
   subSimDir="${familyDir}/${subSimName}"
-
   subSimInputScript="${subSimDir}/${subSimName}${INPUT_EXT}"
   subSimDataFile="${dataDir}/${subSimName}${DATA_EXT}"
   subSimDumpFile="${dumpDir}/${subSimName}${DUMP_AFFIX}"
@@ -331,7 +341,19 @@ function setSubSimLocalNames {
   local awk_inScript="/^${subSimNum}/{print; exit}"
   subSimArgs="`awk "$awk_inScript" $argsFile`"
   if [[ -z "$subSimArgs" ]]; then
-    generalError "Coudnt\'t find record for simulation: $subSimName"
+    generalError "Coudnt\'t find record for simulation: $subSimName \n  in file with arguments: $argsFile"
+  fi
+}
+
+function postprocessing {
+  if [[ -n $POSTPROCESS ]]; then
+    printf "Post-processing on for simulation: $subSimName\n"
+    if [[ -f $postProcessFile ]]; then
+      bash $postProcessFile $subSimDir $subSimInputScript $subSimDataFile $subSimQScript
+      #                     $1         $2                 $3              $4
+    else
+      error "Could not find :\n   $postProcessFile\ncreate this file to enable prostprocessing"  
+    fi
   fi
 }
  
@@ -356,9 +378,90 @@ function createScripts {
       createDataScript
       createQScript
       updateLog $familyDir "Simulation created: $subSimName\nwith arguments: $subSimArgs"
+      postprocessing 
     fi
     ((currentNum++))
   done
+}
+
+function reCreateScripts {
+# ( familyDir createNum )
+  setProjectLocalNames $1
+
+  local createNum=$2
+  local startNum=${createNum%-*}
+  local endNum=${createNum##*-}
+
+  local currentNum=$startNum
+  while [ $currentNum -le $endNum ]; do
+    setSubSimLocalNames "$currentNum"
+
+    if [[ -d $subSimDir ]]; then
+      rm -r $subSimDir
+      mkdir $subSimDir
+      createInputScript
+      createDataScript
+      createQScript
+      updateLog $familyDir "Simulation recreated: $subSimName\nwith arguments: $subSimArgs"
+      postprocessing 
+    else
+      warning "Subsimulation directory does not exists:\n   $sybSim   \nCreating"  
+      mkdir $subSimDir
+      createInputScript
+      createDataScript
+      createQScript
+      updateLog $familyDir "Simulation created: $subSimName\nwith arguments: $subSimArgs"
+      postprocessing 
+    fi
+    ((currentNum++))
+  done
+}
+
+function reCreateQscript {
+# ( familyDir createNum )
+  setProjectLocalNames $1
+
+  local createNum=$2
+  local startNum=${createNum%-*}
+  local endNum=${createNum##*-}
+
+  local currentNum=$startNum
+  while [ $currentNum -le $endNum ]; do
+    setSubSimLocalNames "$currentNum"
+
+    if [[ -d $subSimDir ]]; then
+      rm $subSimQScript
+      createQScript
+      updateLog $familyDir "Simulation qScript recreated: $subSimName\nwith arguments: $subSimArgs"
+    else
+      warning "Subsimulation directory does not exists:\n   $sybSim   \nUse --create flag to create file"  
+    fi
+    
+    ((currentNum++))
+  done
+}
+
+function createTemplate {
+# ( familyDir )
+  setProjectLocalNames $1
+  printf "Creating template scripts\n"
+  updateLog $familyDir "Initializing template scripts set"
+
+  if [[ ! -f $dataFile ]]; then
+    > $dataFile; fi
+  if [[ ! -f  $inputScriptFile ]]; then
+    > $inputScriptFile; fi
+  if [[ ! -f  $QScriptFile ]]; then
+    > $QScriptFile; fi
+  if [[ ! -f  $argsFile ]]; then
+    > $argsFile; fi
+
+  if [[ ! -f $dataModScriptFile ]]; then
+    > $dataModScriptFile; fi
+  if [[ ! -f  $inputModScriptFile ]]; then
+    > $inputModScriptFile; fi
+  if [[ ! -f  $qScriptModScriptFile ]]; then
+    > $qScriptModScriptFile; fi
 }
 
 function qsubScripts {
@@ -465,7 +568,67 @@ while [[ $i -lt $# ]] ; do
       error  "Unsigned integer-integer expected (eg. 0-33), received: ${argv[$i]}"; fi
 
     CREATE=${argv[$i]}
-    if [[ ${CREATE%-*} > ${CREATE##*-} ]]; then
+    if [[ ${CREATE%-*} -gt ${CREATE##*-} ]]; then
+      error  "Unsigned integer-integer expected (in ascending order!), received: ${argv[$i]}"; fi
+    ((i++))
+
+    if [[ -n ${argv[$i]} ]]; then
+      if [[ ${argv[$i]} =~ ^- ]]; then
+        warning "Family directory is not given (or incorrect), setting current directory"
+        FAMILYDIR=`pwd`
+        ((i--))
+      else
+        FAMILYDIR="${argv[$i]}"
+      fi
+    else
+      warning "Family directory is not given, setting current directory"
+      FAMILYDIR=`pwd`
+    fi
+    ((i++)); continue
+  fi
+
+  # recreate (N / x-y) simulations
+  if [[ "${argv[$i]}" = "-rc" ]] || [[ "${argv[$i]}" = "--recreate" ]] ; then
+    ((i++))
+    if [[ -n $RECREATE ]]; then
+      error "Repeated Command: --recreate"; fi
+    if [[ -z "${argv[$i]}" ]]; then
+      error "Simulation number to recreate is not specified"; fi
+    if [[ ! "${argv[$i]}" =~ ^[0-9]+-[0-9]+$ ]]; then
+      error  "Unsigned integer-integer expected (eg. 0-33), received: ${argv[$i]}"; fi
+
+    RECREATE=${argv[$i]}
+    if [[ ${RECREATE%-*} -gt ${RECREATE##*-} ]]; then
+      error  "Unsigned integer-integer expected (in ascending order!), received: ${argv[$i]}"; fi
+    ((i++))
+
+    if [[ -n ${argv[$i]} ]]; then
+      if [[ ${argv[$i]} =~ ^- ]]; then
+        warning "Family directory is not given (or incorrect), setting current directory"
+        FAMILYDIR=`pwd`
+        ((i--))
+      else
+        FAMILYDIR="${argv[$i]}"
+      fi
+    else
+      warning "Family directory is not given, setting current directory"
+      FAMILYDIR=`pwd`
+    fi
+    ((i++)); continue
+  fi
+
+  # re create qscript
+  if [[ "${argv[$i]}" = "-rq" ]] || [[ "${argv[$i]}" = "--re-qscript" ]] ; then
+    ((i++))
+    if [[ -n $REQSCRIPT ]]; then
+      error "Repeated Command: --re-qscript"; fi
+    if [[ -z "${argv[$i]}" ]]; then
+      error "Simulation number to recreate qscript is not specified"; fi
+    if [[ ! "${argv[$i]}" =~ ^[0-9]+-[0-9]+$ ]]; then
+      error  "Unsigned integer-integer expected (eg. 0-33), received: ${argv[$i]}"; fi
+
+    REQSCRIPT=${argv[$i]}
+    if [[ ${REQSCRIPT%-*} -ge ${REQSCRIPT##*-} ]]; then
       error  "Unsigned integer-integer expected (in ascending order!), received: ${argv[$i]}"; fi
     ((i++))
 
@@ -495,7 +658,7 @@ while [[ $i -lt $# ]] ; do
       error  "Unsigned integer-integer expected (eg. 0-33), received: ${argv[$i]}"; fi
 
     QSUB="${argv[$i]}"
-    if [[ ${QSUB%-*} > ${QSUB##*-} ]]; then
+    if [[ ${QSUB%-*} -ge ${QSUB##*-} ]]; then
       error  "Unsigned integer-integer expected (in ascending order!), received: ${argv[$i]}"; fi
 
     ((i++))
@@ -514,52 +677,56 @@ while [[ $i -lt $# ]] ; do
     ((i++)); continue
   fi
 
-  # test create // currently unuse
-  if [[ "${argv[$i]}" = "-t" ]] || [[ "${argv[$i]}" = "--test" ]] ; then
+
+  # create template scripts
+  if [[ "${argv[$i]}" = "-t" ]] || [[ "${argv[$i]}" = "--template" ]] ; then
     ((i++))
-    if [[ -z $TEST ]]; then
-      if [[ -n "${argv[$i]}" ]]; then
-        if [[ "${argv[$i]}" =~ ^[0-9]+$ ]]; then
-          TEST=${argv[$i]}
-          ((i++))
-          if [[ -n ${argv[$i]} ]]; then
-            if [[ ${argv[$i]} =~ ^- ]]; then
-              warning "Family directory is not given (or incorrect), setting current directory"
-              FAMILYDIR=`pwd`
-              ((i--))
-            else
-              FAMILYDIR="${argv[$i]}"
-            fi
-          else
-            warning "Family directory is not given, setting current directory"
-            FAMILYDIR=`pwd`
-          fi
-        else
-          error  "Unsigned integer expected, received: ${argv[$i]}"
-        fi
+    if [[ -n $QSUB ]]; then
+      error "Repeated Command: --template"; fi
+
+    TEMPLATE="yes"
+    ((i++))
+    if [[ -n ${argv[$i]} ]]; then
+      if [[ ${argv[$i]} =~ ^- ]]; then
+        warning "Family directory is not given (or incorrect), setting current directory"
+        FAMILYDIR=`pwd`
+        ((i--))
       else
-        error "Simulation number to test is not specified"
+        FAMILYDIR="${argv[$i]}"
       fi
     else
-      error "Repeated Command: --test"
+      warning "Family directory is not given, setting current directory"
+      FAMILYDIR=`pwd`
     fi
+
+    ((i++)); continue
+  fi
+ 
+  # Post-processing 
+  if [[ "${argv[$i]}" = "-p" ]] || [[ "${argv[$i]}" = "--post-processing" ]] ; then
+    ((i++))
+    if [[ -n $POSTPROCESS ]]; then
+      error "Repeated Command: --template"; fi
+
+    POSTPROCESS="yes"
+    ((i++))
+    if [[ -n ${argv[$i]} ]]; then
+      if [[ ${argv[$i]} =~ ^- ]]; then
+        warning "Family directory is not given (or incorrect), setting current directory"
+        FAMILYDIR=`pwd`
+        ((i--))
+      else
+        FAMILYDIR="${argv[$i]}"
+      fi
+    else
+      warning "Family directory is not given, setting current directory"
+      FAMILYDIR=`pwd`
+    fi
+
     ((i++)); continue
   fi
 
-  # Path to project // unuse
-  if [[ "${argv[$i]}" = "-p" ]] || [[ "${argv[$i]}" = "--path" ]] ; then
-    ((i++))
-    if [[ -z $PROPATH ]]; then
-      if [[ -n ${argv[$i]} ]]; then
-        PROPATH="${argv[$i]}"
-      else
-        error "Project path is not specified"
-      fi
-    else
-      error "Repeated Command: --path"
-    fi
-    ((i++)); continue
-  fi
+
 
   # UNFLAGGED OPTION // UN USE
   echo "Developer warning --- unflaged option possible"
@@ -599,8 +766,24 @@ if [[ -n $CREATE ]]; then
   createScripts $FAMILYDIR $CREATE
 fi
 
-if [[ -n $QSUB ]]; then
+if [[ -n $RECREATE ]]; then
   checkFamilyIntegrity $FAMILYDIR
+  reCreateScripts $FAMILYDIR $RECREATE
+fi
+
+if [[ -n $REQSCRIPT ]]; then
+  checkFamilyIntegrity $FAMILYDIR
+  reCreateQscript $FAMILYDIR $REQSCRIPT
+fi
+
+if [[ -n $TEMPLATE ]]; then
+  setProjectLocalNames $FAMILYDIR
+  checkProjectIntegrity $projectDir
+  createTemplate $FAMILYDIR
+fi
+
+if [[ -n $QSUB ]]; then
+  checkProjectIntegrity $projectDir
   qsubScripts $FAMILYDIR $QSUB
 fi
 
